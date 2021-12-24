@@ -2,11 +2,30 @@ from typing import Union
 
 import os
 
+
 def cls():
     """Clears output: helper"""
-    os.system('cls' if os.name=='nt' else 'clear')
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+
+def suppressExceptions(*exceptions):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except exceptions:
+                pass
+
+        return wrapper
+
+    return decorator
+
 
 class UnitDied(Exception):
+    pass
+
+
+class UnwalkableException(Exception):
     pass
 
 
@@ -107,6 +126,9 @@ class Wall(Terrain):
     def __init__(self):
         super(Wall, self).__init__(False, 'Wall')
 
+    def step_on(self, unit: Unit):
+        raise UnwalkableException()
+
 
 class Cell:
     def __init__(self, terrain: Terrain, unit=None):
@@ -125,8 +147,15 @@ class Cell:
     def set_unit(self, unit: Unit):
         self.unit = unit
 
-    def remove_unit(self):
+    def _remove_unit(self):
         self.unit = None
+
+    def move_unit_to(self, unit, cell):
+        self._remove_unit()
+        cell.set_unit(unit)
+
+        if not self.get_terrain().is_rewalkable():
+            self.reset_terrain()
 
     def get_mapping_alias(self) -> str:
         if self.get_unit() is not None:
@@ -144,23 +173,18 @@ class Field:
     def cell(self, x, y) -> Cell:
         return self.field[x][y]
 
+    @suppressExceptions(UnwalkableException)
     def _move_to_cell(self, old_coords, new_coords):
         x, y = new_coords
         if not 0 <= x < self.cols or not 0 <= y < self.rows:
             return
         cell = self.cell(x, y)
+        old_cell = self.cell(*old_coords)
         terrain = cell.get_terrain()
-        if not terrain.is_walkable():
-            return
         terrain.step_on(self.unit)
 
         self.unit.set_coordinates(x, y)
-
-        cell.set_unit(self.unit)
-        old_cell = self.cell(*old_coords)
-        old_cell.remove_unit()
-        if not old_cell.get_terrain().is_rewalkable():
-            old_cell.reset_terrain()
+        old_cell.move_unit_to(unit=self.unit, cell=cell)
 
     def move_unit_up(self):
         current_coords = self.unit.get_coordinates()
@@ -180,12 +204,6 @@ class Field:
 
     def get_field(self):
         return self.field
-
-    def get_cols(self):
-        return self.cols
-
-    def get_rows(self):
-        return self.rows
 
 
 class GameController:
@@ -256,4 +274,3 @@ if __name__ == '__main__':
     field = Field(field, ghost, cols, rows)
     controller = GameController(ghost, field)
     controller.play()
-
